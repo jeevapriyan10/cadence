@@ -1,0 +1,266 @@
+:root {
+  --bg-primary: #0a0d14;
+  --bg-surface: #111724;
+  --bg-card: rgba(23, 32, 51, 0.7);
+  --border-color: rgba(66, 88, 128, 0.35);
+  --border-highlight: rgba(79, 140, 255, 0.5);
+  --text-main: #f0f4fc;
+  --text-muted: #8899b7;
+  --text-accent: #58a6ff;
+  --signal-green: #3fb950;
+  --signal-amber: #d29922;
+  --track-line: rgba(74, 108, 166, 0.25);
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* Subtle background railway track grid pattern */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.cadence-container {
+  position: relative;
+  z-index: 1;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 80px 24px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+/* Header */
+.cadence-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 64px;
+}
+
+.brand-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(63, 185, 80, 0.1);
+  border: 1px solid rgba(63, 185, 80, 0.3);
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--signal-green);
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--signal-green);
+  box-shadow: 0 0 10px var(--signal-green);
+  animation: pulse-dot 2s infinite ease-in-out;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+/* Hero Section */
+.hero-content {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.railway-symbol {
+  width: 64px;
+  height: 64px;
+  color: var(--text-accent);
+  margin-bottom: 8px;
+  filter: drop-shadow(0 0 16px rgba(88, 166, 255, 0.35));
+}
+
+.cadence-title {
+  font-size: 4rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  background: linear-gradient(135deg, #ffffff 30%, #88a7db 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1.1;
+}
+
+.cadence-tagline {
+  font-size: 1.35rem;
+  color: var(--text-muted);
+  max-width: 640px;
+  line-height: 1.5;
+  font-weight: 300;
+}
+
+.track-visualization {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 520px;
+  margin: 20px 0 12px;
+  padding: 18px 24px;
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+
+.block-indicator {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.block-bar {
+  width: 80px;
+  height: 6px;
+  background: var(--track-line);
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+}
+
+.block-bar.active {
+  background: var(--text-accent);
+  box-shadow: 0 0 8px rgba(88, 166, 255, 0.6);
+}
+
+.block-bar.scheduled {
+  background: var(--signal-amber);
+  box-shadow: 0 0 8px rgba(210, 153, 34, 0.4);
+}
+
+.block-arrow {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* Info Cards */
+.info-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 48px;
+  width: 100%;
+}
+
+.info-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 20px;
+  text-align: left;
+  transition: border-color 0.2s, transform 0.2s;
+}
+
+.info-card:hover {
+  border-color: var(--border-highlight);
+  transform: translateY(-2px);
+}
+
+.card-label {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.card-value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 6px;
+}
+
+.card-desc {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* Footer */
+.cadence-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--border-color);
+  padding-top: 24px;
+  margin-top: 48px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.footer-left {
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 640px) {
+  .cadence-title {
+    font-size: 2.8rem;
+  }
+  .cadence-tagline {
+    font-size: 1.1rem;
+  }
+  .cadence-header, .cadence-footer {
+    flex-direction: column;
+    gap: 16px;
+    align-items: center;
+    text-align: center;
+  }
+  .track-visualization {
+    flex-wrap: wrap;
+  }
+}
