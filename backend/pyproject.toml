@@ -16,6 +16,7 @@ dependencies = [
     "uvicorn[standard]",
     "pydantic",
     "sqlalchemy",
+    "alembic",
     "ortools",
     "networkx",
 ]
@@ -34,3 +35,5 @@ minversion = "7.0"
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_functions = ["test_*"]
+pythonpath = ["."]
+

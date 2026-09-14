@@ -29,6 +29,8 @@ venv.bak/
 .pytest_cache/
 .coverage
 htmlcov/
+*.db
+*.sqlite3
 
 # Node
 node_modules/
