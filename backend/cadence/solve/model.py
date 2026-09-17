@@ -6,16 +6,47 @@ from typing import Any, Optional, Union
 
 from ortools.sat.python import cp_model
 
-from cadence.domain.models import MaintenanceTask, TrackSection, TrainSlot
+from cadence.domain.graph import NetworkGraph
+from cadence.domain.models import MaintenanceTask, SectionAdjacency, TrackSection, TrainSlot
 from cadence.domain.schemas import (
     MaintenanceTaskSchema,
+    SectionAdjacencySchema,
     TrackSectionSchema,
     TrainSlotSchema,
 )
 from cadence.profiles.base import NetworkProfile
+from cadence.solve.safety import precompute_unsafe_adjacency_pairs
 
 DEFAULT_SCALE_FACTOR = 100
 DEFAULT_BASE_TIME = datetime(2026, 1, 1, 6, 0, 0, tzinfo=timezone.utc)
+
+
+class BuildModelResult(dict):
+    """Result dictionary returned by build_cp_model.
+
+    Contains 'model', 'interval_vars', and 'unsafe_adjacency_pairs'.
+    Also supports 2-tuple unpacking (model, interval_vars = build_cp_model(...))
+    for complete backwards compatibility with earlier modules.
+    """
+
+    def __init__(
+        self,
+        model: cp_model.CpModel,
+        interval_vars: dict[str, cp_model.IntervalVar],
+        unsafe_adjacency_pairs: list[tuple[str, str, str]],
+    ) -> None:
+        super().__init__(
+            model=model,
+            interval_vars=interval_vars,
+            unsafe_adjacency_pairs=unsafe_adjacency_pairs,
+        )
+        self.model = model
+        self.interval_vars = interval_vars
+        self.unsafe_adjacency_pairs = unsafe_adjacency_pairs
+
+    def __iter__(self):
+        # Enables backwards-compatible 2-tuple unpacking: model, interval_vars = build_cp_model(...)
+        return iter([self.model, self.interval_vars])
 
 
 def build_cp_model(
@@ -25,7 +56,9 @@ def build_cp_model(
     profile: NetworkProfile,
     time_horizon_minutes: int,
     base_time: Optional[datetime] = None,
-) -> tuple[cp_model.CpModel, dict[str, cp_model.IntervalVar]]:
+    graph: Optional[NetworkGraph] = None,
+    adjacencies: Optional[list[Union[SectionAdjacencySchema, SectionAdjacency]]] = None,
+) -> BuildModelResult:
     """Build a CP-SAT constraint programming model for maintenance block scheduling.
 
     Args:
@@ -36,17 +69,41 @@ def build_cp_model(
         time_horizon_minutes: Maximum scheduling horizon in integer minutes.
         base_time: Optional reference datetime representing minute 0. If None, derived
             from the earliest task or train slot start.
+        graph: Optional NetworkGraph representing the network topology. If None, built from
+            sections and adjacencies.
+        adjacencies: Optional list of SectionAdjacency connections between track sections.
 
     Returns:
-        tuple[cp_model.CpModel, dict[str, cp_model.IntervalVar]]:
-            - Configured CpModel instance.
-            - Dictionary mapping task_id to its corresponding CP-SAT IntervalVar.
+        BuildModelResult: Dictionary holding:
+            - 'model': Configured CpModel instance.
+            - 'interval_vars': Mapping of task_id to its corresponding CP-SAT IntervalVar.
+            - 'unsafe_adjacency_pairs': List of (section_a, section_b, reason) flagged unsafe.
     """
     model = cp_model.CpModel()
     interval_vars: dict[str, cp_model.IntervalVar] = {}
 
+    # Build or resolve NetworkGraph for safety-adjacency precomputation
+    if graph is not None:
+        net_graph = graph
+    elif adjacencies is not None:
+        net_graph = NetworkGraph.build_from_sections(sections, adjacencies)
+    else:
+        net_graph = NetworkGraph.build_from_sections(sections, [])
+
+    # Precompute unsafe adjacency pairs before building interval variables
+    unsafe_adjacency_pairs = precompute_unsafe_adjacency_pairs(
+        graph=net_graph,
+        profile=profile,
+        sections=sections,
+        train_slots=train_slots,
+    )
+
     if not tasks:
-        return model, interval_vars
+        return BuildModelResult(
+            model=model,
+            interval_vars=interval_vars,
+            unsafe_adjacency_pairs=unsafe_adjacency_pairs,
+        )
 
     # Determine reference base datetime for integer minute conversion
     if base_time is None:
@@ -108,10 +165,38 @@ def build_cp_model(
             model.AddNoOverlap(section_intervals)
 
     # =========================================================================
-    # TODO (Module 5): Safety-Adjacency Hard Constraints
-    # In Module 5, profile.is_safe_adjacency() will be injected here to prevent
-    # simultaneous blockages of adjacent track sections that violate profile rules.
+    # SAFETY-ADJACENCY HARD CONSTRAINTS (CREDIBILITY-CRITICAL)
+    # -------------------------------------------------------------------------
+    # STRUCTURAL HARD CONSTRAINT: This constraint is credibility-critical and
+    # must NEVER be made configurable, tunable, bypassable, or reducible to a
+    # soft penalty. If two adjacent track sections cannot be safely blocked
+    # simultaneously under the active profile's is_safe_adjacency() check,
+    # any maintenance block on section_a and any maintenance block on section_b
+    # are strictly forbidden from overlapping in time.
     # =========================================================================
+    for sec_a_id, sec_b_id, reason in unsafe_adjacency_pairs:
+        tasks_on_a = tasks_by_section.get(sec_a_id, [])
+        tasks_on_b = tasks_by_section.get(sec_b_id, [])
+
+        for iv_a in tasks_on_a:
+            for iv_b in tasks_on_b:
+                task_a_id = iv_a.Name().replace("interval_", "")
+                task_b_id = iv_b.Name().replace("interval_", "")
+
+                start_a = task_start_vars[task_a_id]
+                end_a = task_end_vars[task_a_id]
+                start_b = task_start_vars[task_b_id]
+                end_b = task_end_vars[task_b_id]
+
+                before_ab = model.NewBoolVar(f"safety_{task_a_id}_before_{task_b_id}")
+                before_ba = model.NewBoolVar(f"safety_{task_b_id}_before_{task_a_id}")
+
+                model.Add(end_a <= start_b).OnlyEnforceIf(before_ab)
+                model.Add(end_b <= start_a).OnlyEnforceIf(before_ba)
+                model.AddBoolOr([before_ab, before_ba])
+
+                # Disjunctive non-overlap between intervals
+                model.AddNoOverlap([iv_a, iv_b])
 
     # 3. Soft Objective:
     # Term A: Minimize sum of (priority_weight * delay_from_earliest)
@@ -168,4 +253,9 @@ def build_cp_model(
     if objective_terms:
         model.Minimize(sum(objective_terms))
 
-    return model, interval_vars
+    return BuildModelResult(
+        model=model,
+        interval_vars=interval_vars,
+        unsafe_adjacency_pairs=unsafe_adjacency_pairs,
+    )
+
