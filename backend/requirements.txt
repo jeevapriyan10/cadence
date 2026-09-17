@@ -6,4 +6,4 @@ alembic
 ortools
 networkx
 pytest
-
+httpx2
