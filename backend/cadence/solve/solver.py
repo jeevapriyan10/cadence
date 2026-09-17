@@ -7,10 +7,12 @@ from typing import Optional, Union
 from ortools.sat.python import cp_model
 from pydantic import BaseModel, ConfigDict, Field
 
-from cadence.domain.models import MaintenanceTask, TrackSection, TrainSlot
+from cadence.domain.graph import NetworkGraph
+from cadence.domain.models import MaintenanceTask, SectionAdjacency, TrackSection, TrainSlot
 from cadence.domain.schemas import (
     MaintenanceTaskSchema,
     ScheduledBlockSchema,
+    SectionAdjacencySchema,
     TrackSectionSchema,
     TrainSlotSchema,
 )
@@ -25,6 +27,7 @@ class SolveResult(BaseModel):
     scheduled_blocks: list[ScheduledBlockSchema] = Field(default_factory=list)
     objective_value: Optional[float] = None
     wall_time_seconds: float = 0.0
+    unsafe_adjacency_pairs: list[tuple[str, str, str]] = Field(default_factory=list)
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -37,6 +40,8 @@ def solve_schedule(
     time_horizon_minutes: int = 1440,
     time_limit_seconds: int = 30,
     base_time: Optional[datetime] = None,
+    graph: Optional[NetworkGraph] = None,
+    adjacencies: Optional[list[Union[SectionAdjacencySchema, SectionAdjacency]]] = None,
 ) -> SolveResult:
     """Solve the maintenance possession block scheduling problem using Google OR-Tools CP-SAT.
 
@@ -48,18 +53,13 @@ def solve_schedule(
         time_horizon_minutes: Maximum scheduling horizon in integer minutes (default 24h = 1440).
         time_limit_seconds: Maximum wall time allowed for the CP-SAT solver.
         base_time: Reference datetime for minute 0. If None, inferred from task/slot timestamps.
+        graph: Optional NetworkGraph representing the network topology.
+        adjacencies: Optional list of SectionAdjacency connections between track sections.
 
     Returns:
-        SolveResult: Solver status, concrete ScheduledBlockSchema records, objective, and duration.
+        SolveResult: Solver status, concrete ScheduledBlockSchema records, objective, duration,
+            and precomputed unsafe_adjacency_pairs.
     """
-    if not tasks:
-        return SolveResult(
-            status="OPTIMAL",
-            scheduled_blocks=[],
-            objective_value=0.0,
-            wall_time_seconds=0.001,
-        )
-
     # Determine reference base time
     if base_time is None:
         earliest_task_dt = min(
@@ -76,14 +76,28 @@ def solve_schedule(
         ref_time = base_time
 
     # Build CP-SAT model and interval variable mapping
-    model, interval_vars = build_cp_model(
+    build_output = build_cp_model(
         sections=sections,
         tasks=tasks,
         train_slots=train_slots,
         profile=profile,
         time_horizon_minutes=time_horizon_minutes,
         base_time=ref_time,
+        graph=graph,
+        adjacencies=adjacencies,
     )
+    model = build_output["model"]
+    interval_vars = build_output["interval_vars"]
+    unsafe_adjacency_pairs = build_output.get("unsafe_adjacency_pairs", [])
+
+    if not tasks:
+        return SolveResult(
+            status="OPTIMAL",
+            scheduled_blocks=[],
+            objective_value=0.0,
+            wall_time_seconds=0.001,
+            unsafe_adjacency_pairs=unsafe_adjacency_pairs,
+        )
 
     # Configure solver parameters
     solver = cp_model.CpSolver()
@@ -144,4 +158,6 @@ def solve_schedule(
         scheduled_blocks=scheduled_blocks,
         objective_value=objective_value,
         wall_time_seconds=wall_time_seconds,
+        unsafe_adjacency_pairs=unsafe_adjacency_pairs,
     )
+
